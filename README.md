@@ -15,3 +15,4 @@ httpclone will respond with the first successful HTTP request (non-5xx server er
 
 * HTTP header forwarding
 * Statistics
+* HTTPS support
