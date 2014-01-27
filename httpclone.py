@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import argparse
 import tornado
 import tornado.httpclient
@@ -10,7 +12,8 @@ parser = argparse.ArgumentParser(description='Start an HTTP server that clones (
 
 parser.add_argument('-b', '--bind', help='Bind address', default='0.0.0.0')
 parser.add_argument('-p', '--port', help='Port to listen to', default=8080, type=int)
-parser.add_argument('-f', '--forward', help='Forward to (host:port)', action='append', required=True)
+parser.add_argument('-f', '--forward', help='Forward traffic to (host:port)', action='append', required=True)
+parser.add_argument('-c', '--clone', help='Clone traffic to (host:port) disregarding output', action='append')
 
 args = parser.parse_args()
 
@@ -19,17 +22,26 @@ hosts = args.forward
 
 
 class ForwardHandler(tornado.web.RequestHandler):
-    def forward(self, method):
-        self.replied = 0
-        self.replied_ok = False
-        for host in args.forward:
+    def get_requests(self, method, hosts):
+        requests = []
+        for host in hosts:
             url = 'http://%s%s' % (host, self.request.path)
             if method in ["POST", "PUT"]:
                 req = HTTPRequest(url, method=method, body=self.request.body)
             else:
                 req = HTTPRequest(url, method=method)
 
+            requests.append(req)
+
+        return requests
+
+    def forward(self, method):
+        self.replied = 0
+        self.replied_ok = False
+        for req in self.get_requests(method, args.forward):
             client.fetch(req, self.handle_response)
+        for req in self.get_requests(method, args.clone):
+            client.fetch(req)
 
     def handle_response(self, response):
         if self.replied_ok:
@@ -46,8 +58,12 @@ class ForwardHandler(tornado.web.RequestHandler):
                 self.finish()
             return
 
-        self.write(response.body)
         self.set_status(response.code)
+        if response.body:
+            self.write(response.body)
+        else:
+            self.write(response.error.message)
+
         self.replied_ok = True
 
         self.finish()
